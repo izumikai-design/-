@@ -847,7 +847,18 @@ function loadData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
     return INITIAL_DATA;
   }
-  try { return JSON.parse(raw); } catch(e) { return []; }
+  try {
+    const stored = JSON.parse(raw);
+    // 初期データに新しいIDがあればマージして追加
+    const storedIds = new Set(stored.map(d => d.id));
+    const newItems = INITIAL_DATA.filter(d => !storedIds.has(d.id));
+    if (newItems.length > 0) {
+      const merged = [...stored, ...newItems];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      return merged;
+    }
+    return stored;
+  } catch(e) { return []; }
 }
 
 function saveData(data) {
