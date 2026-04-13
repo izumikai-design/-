@@ -837,10 +837,22 @@ const INITIAL_DATA = [
 ];
 
 const STORAGE_KEY = 'programManager_v1';
+const DELETED_KEY = 'programManager_deleted_v1';
 const CATEGORIES = ['通知Bot系', 'Webアプリ系', 'AI・Bot系', '自動収集系', 'その他'];
 const STATUSES = ['運用中', '試験中', '開発完了', '設計中', '運用停止'];
 
 // ===== データ操作 =====
+function loadDeletedIds() {
+  try { return new Set(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]')); }
+  catch(e) { return new Set(); }
+}
+
+function addDeletedId(id) {
+  const ids = loadDeletedIds();
+  ids.add(id);
+  localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -849,9 +861,10 @@ function loadData() {
   }
   try {
     const stored = JSON.parse(raw);
-    // 初期データに新しいIDがあればマージして追加
+    const deletedIds = loadDeletedIds();
+    // 初期データに新しいIDがあり、かつ削除済みでなければマージして追加
     const storedIds = new Set(stored.map(d => d.id));
-    const newItems = INITIAL_DATA.filter(d => !storedIds.has(d.id));
+    const newItems = INITIAL_DATA.filter(d => !storedIds.has(d.id) && !deletedIds.has(d.id));
     if (newItems.length > 0) {
       const merged = [...stored, ...newItems];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -1032,6 +1045,7 @@ function confirmDelete(id, name) {
   document.getElementById('confirmMsg').innerHTML =
     `<strong>${escHtml(name)}</strong> を削除します。<br>この操作は元に戻せません。`;
   document.getElementById('confirmOkBtn').onclick = () => {
+    addDeletedId(id);
     const data = loadData().filter(d => d.id !== id);
     saveData(data);
     closeConfirm();
