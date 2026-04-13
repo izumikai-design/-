@@ -1,0 +1,1158 @@
+<!--
+===========================================
+プログラム管理アプリ
+===========================================
+作成日: 2026-04-09
+最終更新: 2026-04-09
+
+【このアプリについて】
+自分が開発したプログラムを一覧管理するアプリです。
+データはブラウザのlocalStorageに保存されています。
+
+【データ構造】
+各プログラムは以下のJSON形式で保存されます。
+{
+  id: 数字（自動採番）,
+  name: プロジェクト名,
+  category: カテゴリ,
+  summary: 概要,
+  stack: 技術スタック,
+  status: ステータス,
+  memo: 保存場所・メモ,
+  createdAt: 作成日（YYYY-MM-DD）,
+  updatedAt: 更新日（YYYY-MM-DD）
+}
+
+【AIへの修正依頼の仕方】
+このHTMLファイルの中身をすべてコピーして
+Claudeに貼り付け、以下のように依頼してください。
+
+例：
+・「〇〇という項目を追加したい」
+・「ステータスに△△を追加したい」
+・「カテゴリに□□を追加したい」
+・「デザインを変えたい」
+・「〇〇の機能が動かないので修正して」
+
+【修正前の注意】
+必ず設定画面からJSONバックアップを取ってから
+AIに修正を依頼してください。
+===========================================
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>プログラム管理</title>
+  <style>
+    /* ===== リセット・ベース ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --card-hover: #1c2230;
+      --border: #30363d;
+      --border-hover: #58a6ff;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-strong: #f0f6fc;
+      --accent: #58a6ff;
+      --header-bg: #161b22;
+      --input-bg: #0d1117;
+      --modal-bg: #161b22;
+      --overlay: rgba(0,0,0,0.7);
+      --tag-bg: #21262d;
+      --s-green: #2ea043; --s-green-light: #3fb950;
+      --s-blue: #1f6feb;  --s-blue-light: #58a6ff;
+      --s-purple: #6e40c9; --s-purple-light: #a371f7;
+      --s-orange: #bd561d; --s-orange-light: #f0883e;
+      --s-gray: #4a4f57;  --s-gray-light: #8b949e;
+    }
+    html { font-size: 16px; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ===== ヘッダー ===== */
+    header {
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .header-title span { color: var(--accent); }
+    .header-actions { display: flex; gap: 0.5rem; }
+    .btn-icon {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: border-color 0.2s, background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .btn-icon:hover { border-color: var(--accent); background: var(--card); color: var(--text-strong); }
+
+    /* ===== 検索・フィルター ===== */
+    .filter-bar {
+      padding: 1rem 1.5rem;
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .search-wrap { position: relative; flex: 1; min-width: 200px; }
+    .search-wrap svg {
+      position: absolute;
+      left: 0.6rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+    input[type="text"], input[type="search"], select, textarea {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+    input[type="search"] { padding-left: 2rem; }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    select { cursor: pointer; }
+    textarea { resize: vertical; min-height: 80px; }
+    .filter-select { min-width: 160px; flex-shrink: 0; }
+
+    /* ===== メインコンテンツ ===== */
+    main { padding: 1.5rem; max-width: 1400px; margin: 0 auto; }
+
+    /* ===== 統計バー ===== */
+    .stats-bar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .stat-chip {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0.3rem 0.85rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .stat-chip strong { color: var(--text-strong); font-size: 0.95rem; }
+
+    /* ===== カテゴリグループ ===== */
+    .category-group { margin-bottom: 2rem; }
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .category-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-strong);
+    }
+    .category-count {
+      background: var(--tag-bg);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 10px;
+    }
+
+    /* ===== カードグリッド ===== */
+    .cards-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(3, 1fr);
+    }
+    @media (max-width: 1100px) { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 680px)  { .cards-grid { grid-template-columns: 1fr; } }
+
+    /* ===== カード ===== */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.1rem 1.1rem 0.9rem;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 0 0 1px var(--border-hover), 0 4px 16px rgba(88,166,255,0.12);
+      transform: translateY(-2px);
+    }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    .card-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-strong);
+      line-height: 1.4;
+      flex: 1;
+    }
+    .card-summary {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.5;
+    }
+    .card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+    .tag {
+      background: var(--tag-bg);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.1rem;
+    }
+    .card-date { font-size: 0.73rem; color: var(--text-muted); }
+
+    /* ===== ステータスバッジ ===== */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .badge::before {
+      content: '';
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+    .badge-運用中    { background: rgba(46,160,67,.18); color: var(--s-green-light); border: 1px solid rgba(46,160,67,.35); }
+    .badge-運用中::before { background: var(--s-green-light); }
+    .badge-試験中    { background: rgba(31,111,235,.18); color: var(--s-blue-light); border: 1px solid rgba(31,111,235,.35); }
+    .badge-試験中::before { background: var(--s-blue-light); }
+    .badge-開発完了  { background: rgba(110,64,201,.18); color: var(--s-purple-light); border: 1px solid rgba(110,64,201,.35); }
+    .badge-開発完了::before { background: var(--s-purple-light); }
+    .badge-設計中    { background: rgba(189,86,29,.18); color: var(--s-orange-light); border: 1px solid rgba(189,86,29,.35); }
+    .badge-設計中::before { background: var(--s-orange-light); }
+    .badge-運用停止  { background: rgba(74,79,87,.25); color: var(--s-gray-light); border: 1px solid rgba(74,79,87,.4); }
+    .badge-運用停止::before { background: var(--s-gray-light); }
+
+    /* ===== 空状態 ===== */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: var(--text-muted);
+    }
+    .empty-state svg { margin-bottom: 1rem; opacity: 0.4; }
+    .empty-state p { font-size: 0.9rem; margin-top: 0.5rem; }
+
+    /* ===== フローティングボタン ===== */
+    .fab {
+      position: fixed;
+      right: 1.5rem;
+      bottom: 1.5rem;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 1.6rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(88,166,255,0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+      z-index: 200;
+      line-height: 1;
+    }
+    .fab:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(88,166,255,0.55); }
+
+    /* ===== モーダル共通 ===== */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--overlay);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .overlay.open { display: flex; }
+    .modal {
+      background: var(--modal-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: modalIn 0.2s ease;
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.1rem 1.4rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--modal-bg);
+      z-index: 1;
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; color: var(--text-strong); }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0.2rem;
+      border-radius: 4px;
+      transition: color 0.2s;
+    }
+    .modal-close:hover { color: var(--text-strong); }
+    .modal-body { padding: 1.4rem; }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      padding: 1rem 1.4rem;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ===== フォーム ===== */
+    .form-group { margin-bottom: 1.1rem; }
+    .form-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+      letter-spacing: 0.02em;
+    }
+    .required::after { content: ' *'; color: #f85149; }
+
+    /* ===== ボタン ===== */
+    .btn {
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { background: #79b8ff; border-color: #79b8ff; }
+    .btn-secondary { background: transparent; color: var(--text); border-color: var(--border); }
+    .btn-secondary:hover { border-color: var(--text-muted); }
+    .btn-danger { background: transparent; color: #f85149; border-color: #f85149; }
+    .btn-danger:hover { background: rgba(248,81,73,.1); }
+    .btn-success { background: var(--s-green); color: #fff; border-color: var(--s-green); }
+    .btn-success:hover { background: var(--s-green-light); border-color: var(--s-green-light); }
+
+    /* ===== 詳細モーダル ===== */
+    .detail-grid { display: grid; gap: 1rem; }
+    .detail-item label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .detail-item .detail-value {
+      color: var(--text);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .detail-item .detail-value.strong { color: var(--text-strong); font-size: 1.05rem; font-weight: 600; }
+    .detail-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .detail-tags .tag { font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+    .detail-dates {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .detail-actions { display: flex; gap: 0.75rem; }
+
+    /* ===== 設定画面 ===== */
+    .settings-modal { max-width: 480px; }
+    .settings-section { margin-bottom: 1.5rem; }
+    .settings-section h3 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-btn-group { display: flex; flex-direction: column; gap: 0.6rem; }
+    .settings-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.7rem 1rem;
+      background: var(--tag-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-family: inherit;
+      transition: border-color 0.2s, background 0.2s;
+      text-align: left;
+    }
+    .settings-btn:hover { border-color: var(--accent); background: rgba(88,166,255,.06); color: var(--text-strong); }
+    .settings-btn svg { flex-shrink: 0; }
+    .settings-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; margin-left: 1.85rem; }
+    .settings-info {
+      background: rgba(88,166,255,.08);
+      border: 1px solid rgba(88,166,255,.25);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .settings-info strong { color: var(--accent); }
+
+    /* ===== 確認ダイアログ ===== */
+    .confirm-modal { max-width: 380px; }
+    .confirm-msg { font-size: 0.9rem; line-height: 1.6; }
+    .confirm-msg strong { color: var(--text-strong); }
+
+    /* ===== スクロールバー ===== */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ===== 印刷用CSS ===== */
+    @media print {
+      header, .filter-bar, .fab, .overlay, .stats-bar { display: none !important; }
+      body { background: #fff !important; color: #000 !important; }
+      .card {
+        background: #fff !important;
+        border: 1px solid #ccc !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+        color: #000 !important;
+      }
+      .card-name, .card-summary, .card-date { color: #000 !important; }
+      .tag { background: #eee !important; color: #333 !important; }
+      .badge { border: 1px solid #999 !important; }
+      .badge-運用中    { background: #e6f4ea !important; color: #137333 !important; }
+      .badge-試験中    { background: #e8f0fe !important; color: #1a73e8 !important; }
+      .badge-開発完了  { background: #f3e8fd !important; color: #6e40c9 !important; }
+      .badge-設計中    { background: #fff3e0 !important; color: #e65100 !important; }
+      .badge-運用停止  { background: #f1f3f4 !important; color: #5f6368 !important; }
+      .category-header h2 { color: #000 !important; }
+      main { padding: 0 !important; }
+      .cards-grid { grid-template-columns: repeat(2, 1fr) !important; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== ヘッダー ===== -->
+<header>
+  <div class="header-title">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    <span>プログラム</span>管理
+  </div>
+  <div class="header-actions">
+    <button class="btn-icon" onclick="openSettings()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M2 12h2m16 0h2M12 2v2m0 16v2"/></svg>
+      設定・管理
+    </button>
+  </div>
+</header>
+
+<!-- ===== 検索・フィルター ===== -->
+<div class="filter-bar">
+  <div class="search-wrap">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="searchInput" placeholder="プロジェクト名・概要・技術スタックで検索..." oninput="render()">
+  </div>
+  <select id="statusFilter" class="filter-select" onchange="render()">
+    <option value="">すべてのステータス</option>
+    <option>運用中</option>
+    <option>試験中</option>
+    <option>開発完了</option>
+    <option>設計中</option>
+    <option>運用停止</option>
+  </select>
+  <select id="categoryFilter" class="filter-select" onchange="render()">
+    <option value="">すべてのカテゴリ</option>
+    <option>通知Bot系</option>
+    <option>Webアプリ系</option>
+    <option>AI・Bot系</option>
+    <option>自動収集系</option>
+    <option>その他</option>
+  </select>
+</div>
+
+<!-- ===== メイン ===== -->
+<main>
+  <div class="stats-bar" id="statsBar"></div>
+  <div id="listView"></div>
+</main>
+
+<!-- ===== フローティングボタン ===== -->
+<button class="fab" onclick="openForm(null)" title="新規追加">＋</button>
+
+<!-- ===== 詳細モーダル ===== -->
+<div class="overlay" id="detailOverlay" onclick="closeOverlayOnBg(event,'detailOverlay')">
+  <div class="modal" id="detailModal">
+    <div class="modal-header">
+      <span class="modal-title" id="detailTitle"></span>
+      <button class="modal-close" onclick="closeDetail()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-grid" id="detailBody"></div>
+    </div>
+    <div class="modal-footer">
+      <div class="detail-actions">
+        <button class="btn btn-danger" id="detailDeleteBtn">削除</button>
+        <button class="btn btn-secondary" onclick="closeDetail()">閉じる</button>
+        <button class="btn btn-primary" id="detailEditBtn">編集</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== フォームモーダル ===== -->
+<div class="overlay" id="formOverlay" onclick="closeOverlayOnBg(event,'formOverlay')">
+  <div class="modal" id="formModal">
+    <div class="modal-header">
+      <span class="modal-title" id="formTitle">新規追加</span>
+      <button class="modal-close" onclick="closeForm()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="programForm" onsubmit="saveForm(event)">
+        <div class="form-group">
+          <label class="form-label required">プロジェクト名</label>
+          <input type="text" id="fName" placeholder="例：入所・退所 通知システム" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label required">カテゴリ</label>
+          <select id="fCategory" required>
+            <option value="">選択してください</option>
+            <option>通知Bot系</option>
+            <option>Webアプリ系</option>
+            <option>AI・Bot系</option>
+            <option>自動収集系</option>
+            <option>その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">概要</label>
+          <textarea id="fSummary" placeholder="このプログラムが何をするか、どんな問題を解決するか"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">技術スタック</label>
+          <textarea id="fStack" placeholder="例：Google Apps Script / JavaScript / Google Calendar API&#10;（スラッシュ区切りでタグ表示されます）" style="min-height:70px;"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label required">ステータス</label>
+          <select id="fStatus" required>
+            <option value="">選択してください</option>
+            <option>運用中</option>
+            <option>試験中</option>
+            <option>開発完了</option>
+            <option>設計中</option>
+            <option>運用停止</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">保存場所・メモ</label>
+          <textarea id="fMemo" placeholder="ファイルパス、注意事項、補足情報など"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeForm()">キャンセル</button>
+      <button class="btn btn-primary" onclick="document.getElementById('programForm').requestSubmit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 確認ダイアログ ===== -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal confirm-modal">
+    <div class="modal-header">
+      <span class="modal-title">削除の確認</span>
+      <button class="modal-close" onclick="closeConfirm()">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="confirm-msg" id="confirmMsg"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeConfirm()">キャンセル</button>
+      <button class="btn btn-danger" id="confirmOkBtn">削除する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 設定モーダル ===== -->
+<div class="overlay" id="settingsOverlay" onclick="closeOverlayOnBg(event,'settingsOverlay')">
+  <div class="modal settings-modal">
+    <div class="modal-header">
+      <span class="modal-title">設定・管理</span>
+      <button class="modal-close" onclick="closeSettings()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-section">
+        <h3>データ管理</h3>
+        <div class="settings-btn-group">
+          <div>
+            <button class="settings-btn" onclick="exportJSON()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              JSONエクスポート（バックアップ）
+            </button>
+            <p class="settings-desc">programs_backup_日付.json としてダウンロードします</p>
+          </div>
+          <div>
+            <button class="settings-btn" onclick="document.getElementById('importFile').click()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              JSONインポート（復元）
+            </button>
+            <p class="settings-desc">バックアップJSONを読み込んで復元します（現在のデータは上書きされます）</p>
+            <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+          </div>
+          <div>
+            <button class="settings-btn" onclick="printPage()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              印刷・PDF保存
+            </button>
+            <p class="settings-desc">ブラウザの印刷機能でPDF保存も可能です</p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>データ情報</h3>
+        <div class="settings-info" id="settingsInfo"></div>
+      </div>
+      <div class="settings-section">
+        <h3>AIへの修正依頼について</h3>
+        <div class="settings-info">
+          このHTMLファイルをすべてコピーして<strong>Claude</strong>に貼り付け、<br>
+          「○○という機能を追加したい」「○○が動かないので修正して」<br>
+          などと依頼することで機能追加・修正ができます。<br><br>
+          <strong>修正前に必ずJSONバックアップを取ってください。</strong>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeSettings()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 初期データ =====
+const INITIAL_DATA = [
+  {
+    "id": 1,
+    "name": "入所・退所 通知システム",
+    "category": "通知Bot系",
+    "summary": "Googleカレンダーに予定が登録されると5分以内にGoogle Chatへ自動通知。入所通知書・退所通知書・SS利用で色分け表示。",
+    "stack": "Google Apps Script / JavaScript / Google Calendar API / Google Chat Webhook / PropertiesService",
+    "status": "運用中",
+    "memo": "",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 2,
+    "name": "面会予定 通知システム",
+    "category": "通知Bot系",
+    "summary": "毎朝、2つのカレンダーから面会スケジュールを集めてGoogle Chatに送信。予定ゼロの日も「予定なし」と通知してシステム稼働確認も兼ねる。",
+    "stack": "Google Apps Script / JavaScript / Google Calendar API / Google Chat Webhook",
+    "status": "運用中",
+    "memo": "",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 3,
+    "name": "会議室予約システム",
+    "category": "Webアプリ系",
+    "summary": "スマホ・PCのブラウザから5部屋（会議室・応接室・ボランティア室・相談室①②）を予約できるWebアプリ。ダブルブッキング防止機能付き。",
+    "stack": "Google Apps Script / JavaScript / HTML / CSS / Google Calendar API",
+    "status": "試験中",
+    "memo": "",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 4,
+    "name": "電子回覧・報告書システム",
+    "category": "Webアプリ系",
+    "summary": "インシデント報告書・研修報告書・委員会議事録をWeb提出すると関係者全員にメール通知。誰がまだ確認していないか一目でわかる。",
+    "stack": "Google Apps Script / JavaScript / HTML / CSS / SpreadsheetApp / DriveApp / GmailApp / Google Chat Webhook",
+    "status": "試験中",
+    "memo": "確認者数 最大14名（種別により6名または14名）",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 5,
+    "name": "地連・週間予定表 通知システム",
+    "category": "通知Bot系",
+    "summary": "GASトリガーで週次スケジュールをGoogle Chatに自動通知。対象者6名のメールアドレスを日本語名に変換して表示。",
+    "stack": "Google Apps Script / JavaScript / Google Calendar API / Google Chat Webhook",
+    "status": "試験中",
+    "memo": "トリガー時間設定ミス修正対応済み",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 6,
+    "name": "規則案内Bot",
+    "category": "AI・Bot系",
+    "summary": "Google Chat上で就業規則・規定に関する質問に自動回答するBot。PDFをOCRでテキスト抽出して参照。",
+    "stack": "Google Apps Script / Google Chat API / Google Drive API / Groq API (llama-3.3-70b-versatile)",
+    "status": "運用停止",
+    "memo": "ファイル増加に伴いNotebookLMに移行。コードはDesktop/GAS_ChatBotに保存済み。",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 7,
+    "name": "厚労省診療報酬改定資料 自動収集・共有ツール",
+    "category": "自動収集系",
+    "summary": "厚労省HPの令和8年度診療報酬改定ページを毎日自動監視し、医科関連ファイルをGoogle Driveに保存。新着時に通知し、NotebookLMで職員が改定内容を質問できる環境を構築。",
+    "stack": "Python 3.11 / Google Drive API / GitHub Actions / NotebookLM",
+    "status": "設計中",
+    "memo": "歯科・調剤・DPC・薬価は対象外。NotebookLMへの登録は新着通知後に手動で行う。",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  },
+  {
+    "id": 8,
+    "name": "面談自動記録システム",
+    "category": "AI・Bot系",
+    "summary": "面談音声をAndroidで録音しGoogle Driveに保存するだけで、NotebookLMによる文字起こし→Geminiによる整形→Google Chatへ自動投稿まで無人で実行されるパイプライン。",
+    "stack": "Python / Playwright / Google Gemini API / Google Chat Webhook / watchdog / Windowsタスクスケジューラ",
+    "status": "試験中",
+    "memo": "Geminiは無料枠使用（1日上限あり）。1〜2時間の長尺音声に対応（最大60分待機）。エラー時はGoogle Chatにエラー通知を自動送信。",
+    "createdAt": "2026-04-09",
+    "updatedAt": "2026-04-09"
+  }
+];
+
+const STORAGE_KEY = 'programManager_v1';
+const CATEGORIES = ['通知Bot系', 'Webアプリ系', 'AI・Bot系', '自動収集系', 'その他'];
+const STATUSES = ['運用中', '試験中', '開発完了', '設計中', '運用停止'];
+
+// ===== データ操作 =====
+function loadData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
+    return INITIAL_DATA;
+  }
+  try { return JSON.parse(raw); } catch(e) { return []; }
+}
+
+function saveData(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function today() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function nextId(data) {
+  return data.length ? Math.max(...data.map(d=>d.id)) + 1 : 1;
+}
+
+// ===== レンダリング =====
+let currentDetailId = null;
+
+function getFiltered() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const sf = document.getElementById('statusFilter').value;
+  const cf = document.getElementById('categoryFilter').value;
+  let data = loadData();
+  if (q) {
+    data = data.filter(d =>
+      d.name.toLowerCase().includes(q) ||
+      (d.summary||'').toLowerCase().includes(q) ||
+      (d.stack||'').toLowerCase().includes(q) ||
+      (d.memo||'').toLowerCase().includes(q)
+    );
+  }
+  if (sf) data = data.filter(d => d.status === sf);
+  if (cf) data = data.filter(d => d.category === cf);
+  return data;
+}
+
+function render() {
+  const data = getFiltered();
+  const all = loadData();
+  renderStats(all, data);
+  renderList(data);
+}
+
+function renderStats(all, filtered) {
+  const counts = {};
+  STATUSES.forEach(s => counts[s] = all.filter(d=>d.status===s).length);
+  const showing = filtered.length !== all.length
+    ? `<div class="stat-chip"><strong>${filtered.length}</strong> 件表示中</div>` : '';
+  document.getElementById('statsBar').innerHTML =
+    `<div class="stat-chip">合計 <strong>${all.length}</strong> 件</div>` +
+    STATUSES.map(s => counts[s] > 0
+      ? `<div class="stat-chip"><span class="badge badge-${s}">${s}</span> <strong>${counts[s]}</strong></div>`
+      : ''
+    ).join('') + showing;
+}
+
+function renderList(data) {
+  const view = document.getElementById('listView');
+  if (data.length === 0) {
+    view.innerHTML = `<div class="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <h3>該当するプログラムが見つかりません</h3>
+      <p>検索条件を変更するか、新規追加ボタンで追加してください。</p>
+    </div>`;
+    return;
+  }
+
+  // カテゴリ順に並べて表示
+  const grouped = {};
+  CATEGORIES.forEach(c => { grouped[c] = []; });
+  data.forEach(d => {
+    if (!grouped[d.category]) grouped[d.category] = [];
+    grouped[d.category].push(d);
+  });
+
+  view.innerHTML = CATEGORIES.map(cat => {
+    const items = grouped[cat];
+    if (!items || items.length === 0) return '';
+    return `<div class="category-group">
+      <div class="category-header">
+        <h2>${cat}</h2>
+        <span class="category-count">${items.length}</span>
+      </div>
+      <div class="cards-grid">
+        ${items.map(d => renderCard(d)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCard(d) {
+  const tags = (d.stack || '').split('/').map(s => s.trim()).filter(Boolean);
+  const tagHtml = tags.slice(0, 5).map(t =>
+    `<span class="tag" title="${escHtml(t)}">${escHtml(t)}</span>`
+  ).join('') + (tags.length > 5 ? `<span class="tag">+${tags.length-5}</span>` : '');
+
+  return `<div class="card" onclick="openDetail(${d.id})">
+    <div class="card-top">
+      <div class="card-name">${escHtml(d.name)}</div>
+      <span class="badge badge-${d.status}">${escHtml(d.status)}</span>
+    </div>
+    ${d.summary ? `<div class="card-summary">${escHtml(d.summary)}</div>` : ''}
+    ${tagHtml ? `<div class="card-tags">${tagHtml}</div>` : ''}
+    <div class="card-footer">
+      <span class="card-date">更新 ${d.updatedAt}</span>
+    </div>
+  </div>`;
+}
+
+function escHtml(str) {
+  return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ===== 詳細モーダル =====
+function openDetail(id) {
+  const data = loadData();
+  const d = data.find(x => x.id === id);
+  if (!d) return;
+  currentDetailId = id;
+
+  document.getElementById('detailTitle').textContent = d.name;
+
+  const tags = (d.stack || '').split('/').map(s => s.trim()).filter(Boolean);
+  const tagHtml = tags.map(t => `<span class="tag">${escHtml(t)}</span>`).join('');
+
+  document.getElementById('detailBody').innerHTML = `
+    <div class="detail-item">
+      <label>プロジェクト名</label>
+      <div class="detail-value strong">${escHtml(d.name)}</div>
+    </div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+      <div class="detail-item" style="flex:1;min-width:120px;">
+        <label>カテゴリ</label>
+        <div class="detail-value">${escHtml(d.category)}</div>
+      </div>
+      <div class="detail-item" style="flex:1;min-width:120px;">
+        <label>ステータス</label>
+        <div class="detail-value"><span class="badge badge-${d.status}">${escHtml(d.status)}</span></div>
+      </div>
+    </div>
+    ${d.summary ? `<div class="detail-item">
+      <label>概要</label>
+      <div class="detail-value">${escHtml(d.summary)}</div>
+    </div>` : ''}
+    ${tagHtml ? `<div class="detail-item">
+      <label>技術スタック</label>
+      <div class="detail-tags">${tagHtml}</div>
+    </div>` : ''}
+    ${d.memo ? `<div class="detail-item">
+      <label>保存場所・メモ</label>
+      <div class="detail-value">${escHtml(d.memo)}</div>
+    </div>` : ''}
+    <div class="detail-dates">
+      <span>作成日：${d.createdAt}</span>
+      <span>更新日：${d.updatedAt}</span>
+    </div>
+  `;
+
+  document.getElementById('detailEditBtn').onclick = () => { closeDetail(); openForm(id); };
+  document.getElementById('detailDeleteBtn').onclick = () => confirmDelete(id, d.name);
+
+  document.getElementById('detailOverlay').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.remove('open');
+  currentDetailId = null;
+}
+
+// ===== 削除確認 =====
+function confirmDelete(id, name) {
+  document.getElementById('confirmMsg').innerHTML =
+    `<strong>${escHtml(name)}</strong> を削除します。<br>この操作は元に戻せません。`;
+  document.getElementById('confirmOkBtn').onclick = () => {
+    const data = loadData().filter(d => d.id !== id);
+    saveData(data);
+    closeConfirm();
+    closeDetail();
+    render();
+  };
+  document.getElementById('confirmOverlay').classList.add('open');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmOverlay').classList.remove('open');
+}
+
+// ===== フォームモーダル =====
+let editingId = null;
+
+function openForm(id) {
+  editingId = id;
+  const data = loadData();
+  const d = id ? data.find(x => x.id === id) : null;
+
+  document.getElementById('formTitle').textContent = d ? '編集' : '新規追加';
+  document.getElementById('fName').value = d ? d.name : '';
+  document.getElementById('fCategory').value = d ? d.category : '';
+  document.getElementById('fSummary').value = d ? d.summary : '';
+  document.getElementById('fStack').value = d ? d.stack : '';
+  document.getElementById('fStatus').value = d ? d.status : '';
+  document.getElementById('fMemo').value = d ? d.memo : '';
+
+  document.getElementById('formOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('fName').focus(), 100);
+}
+
+function closeForm() {
+  document.getElementById('formOverlay').classList.remove('open');
+  editingId = null;
+}
+
+function saveForm(e) {
+  e.preventDefault();
+  const name = document.getElementById('fName').value.trim();
+  const category = document.getElementById('fCategory').value;
+  const summary = document.getElementById('fSummary').value.trim();
+  const stack = document.getElementById('fStack').value.trim();
+  const status = document.getElementById('fStatus').value;
+  const memo = document.getElementById('fMemo').value.trim();
+
+  if (!name || !category || !status) return;
+
+  let data = loadData();
+  const t = today();
+
+  if (editingId) {
+    data = data.map(d => d.id === editingId
+      ? { ...d, name, category, summary, stack, status, memo, updatedAt: t }
+      : d
+    );
+  } else {
+    data.push({ id: nextId(data), name, category, summary, stack, status, memo, createdAt: t, updatedAt: t });
+  }
+
+  saveData(data);
+  closeForm();
+  render();
+}
+
+// ===== 設定モーダル =====
+function openSettings() {
+  const data = loadData();
+  const counts = {};
+  STATUSES.forEach(s => counts[s] = data.filter(d=>d.status===s).length);
+  document.getElementById('settingsInfo').innerHTML =
+    `登録プログラム数：<strong>${data.length} 件</strong><br>` +
+    STATUSES.map(s => `${s}：${counts[s]}件`).join('　　') +
+    `<br><br>最終更新：${data.length ? data.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0].updatedAt : '—'}`;
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.remove('open');
+}
+
+// ===== エクスポート =====
+function exportJSON() {
+  const data = loadData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `programs_backup_${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ===== インポート =====
+function importJSON(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!Array.isArray(data)) throw new Error('配列形式でありません');
+      saveData(data);
+      render();
+      closeSettings();
+      alert(`${data.length} 件のデータを読み込みました。`);
+    } catch(err) {
+      alert('読み込みに失敗しました。正しいJSONファイルか確認してください。\n' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  e.target.value = '';
+}
+
+// ===== 印刷 =====
+function printPage() {
+  closeSettings();
+  setTimeout(() => window.print(), 200);
+}
+
+// ===== オーバーレイ背景クリックで閉じる =====
+function closeOverlayOnBg(e, overlayId) {
+  if (e.target.id === overlayId) {
+    document.getElementById(overlayId).classList.remove('open');
+    if (overlayId === 'detailOverlay') currentDetailId = null;
+    if (overlayId === 'formOverlay') editingId = null;
+  }
+}
+
+// ===== キーボードショートカット =====
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['confirmOverlay','formOverlay','detailOverlay','settingsOverlay'].forEach(id => {
+      document.getElementById(id).classList.remove('open');
+    });
+    editingId = null;
+    currentDetailId = null;
+  }
+});
+
+// ===== 初期表示 =====
+render();
+</script>
+</body>
+</html>
